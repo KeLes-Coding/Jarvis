@@ -14,6 +14,7 @@ class OpenAITaskDecomposer:
         self.headers = {
             "Content-Type": "application/json",
             "Authorization": f"Bearer {api_key}",
+            "enable_thinking": "true",
         }
         self.model = model
         self.proxy = proxy  # Added proxy attribute

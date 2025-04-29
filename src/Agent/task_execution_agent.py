@@ -62,6 +62,7 @@ class TaskExecutionAgent:
         self.headers = {
             "Content-Type": "application/json",  # 标准请求头
             "Authorization": f"Bearer {api_key}",  # API 认证
+            "enable_thinking": "true",
         }
         self.model = model  # 使用的模型
         self.proxy = proxy  # 代理设置

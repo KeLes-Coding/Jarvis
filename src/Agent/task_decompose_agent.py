@@ -84,6 +84,7 @@ class TaskDecomposer:
         self.headers = {
             "Content-Type": "application/json",
             "Authorization": f"Bearer {api_key}",
+            "enable_thinking": "true",
         }
         self.model = (
             model if model else "default_model"
