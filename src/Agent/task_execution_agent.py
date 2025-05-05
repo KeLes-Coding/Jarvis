@@ -185,13 +185,15 @@ class TaskExecutionAgent:
                 "atomic_tasks_description", "# 错误：未找到任务描述"
             )
 
+            current_agent = current_task.get("atomic_tasks_agent")
+
             print(f"\n>>> 当前待执行任务 ID: {task_id_int} <<<")
             print(f"任务描述: {user_question}")
 
             # 步骤 2a: 获取用户执行结果 (这里是手动输入，未来可替换为工具调用等)
             # TODO: 将这里的 input 替换为实际的工具调用或函数执行
             operator(
-                "mobile_agent_e",
+                current_agent,
                 log_directory_path,
                 task_id_int,
                 "individual",

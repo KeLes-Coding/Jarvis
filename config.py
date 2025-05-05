@@ -1,7 +1,7 @@
 GlOBAL_PROXY = "http://127.0.0.1:7890"
 
 # task_loader #
-JSON_PATH = "I:/Paper/250302_BenckmarkV2/code/250416/Test/L3_1.json"
+JSON_PATH = ".L3_1.json"
 
 # task_decompose_agent #
 TD_API_KEY = ""

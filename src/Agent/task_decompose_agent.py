@@ -6,7 +6,17 @@ import os
 from typing import Dict, List, Optional  # 引入 Optional 用于类型提示
 from collections import OrderedDict
 
-from .task_roader import TaskData, read_task_data_from_json
+import sys
+import os
+
+project_root = os.path.abspath(
+    os.path.join(os.path.dirname(__file__), "..", "..")
+)  # 假设根目录在 Agent 上两级
+sys.path.insert(0, project_root)
+
+from src.Agent.task_roader import TaskData, read_task_data_from_json
+
+# from .task_roader import TaskData, read_task_data_from_json
 import config
 
 
@@ -44,6 +54,38 @@ class TaskData:
                 if task.get("atomic_tasks_ID") == atomic_id:  # 使用 .get() 以确保安全
                     return task.get("answer")
         return None  # 如果没有找到匹配的ID或列表为空，返回None
+
+
+def load_agent_list(file_path="agent_list.json"):
+    """
+    Reads the agent list from a JSON file.
+
+    Args:
+      file_path (str): The path to the JSON file.
+                       Defaults to "agent_list.json".
+
+    Returns:
+      list: A list of agent dictionaries if the file is read successfully.
+            Returns None if the file is not found or contains invalid JSON.
+    """
+    try:
+        # Open the file in read mode with utf-8 encoding
+        with open(file_path, "r", encoding="utf-8") as f:
+            # Load the JSON data from the file
+            agent_data = json.load(f)
+            return agent_data
+    except FileNotFoundError:
+        # Handle the case where the file does not exist
+        print(f"Error: File not found at {file_path}")
+        return None
+    except json.JSONDecodeError:
+        # Handle the case where the file contains invalid JSON
+        print(f"Error: Could not decode JSON from {file_path}")
+        return None
+    except Exception as e:
+        # Handle any other potential errors during file reading or JSON parsing
+        print(f"An unexpected error occurred: {e}")
+        return None
 
 
 # --- read_task_data_from_json 函数保持不变 ---
@@ -90,41 +132,62 @@ class TaskDecomposer:
             model if model else "default_model"
         )  # 确保 self.model 有值，用于路径
         self.proxy = proxy
+        self.agent_list = load_agent_list()  # 加载 agent_list.json
         # 注意：这是一个发送给LLM的指令字符串，保持英文以确保LLM理解
-        self.system_prompt = """You are an expert task decomposer. Your ONLY output MUST be a valid JSON object.
+        self.system_prompt = f"""You are an expert task decomposer and agent selector. Your ONLY output MUST be a valid JSON object.
 Strictly follow these rules:
-1. Analyze temporal sequence: Identify time-based dependencies (e.g., 'search first, then process results').
-2. Resolve references: Handle expressions like 'this', 'this person', 'this year'.
-3. Identify tool dependencies: Specify data sources for each step (e.g., Wikipedia, Apple Music).
-4. Required output format: Your entire response MUST conform strictly to the following JSON structure. Do NOT include ANY text before the opening '{' or after the closing '}'. Do NOT use markdown formatting like ```json.
-
+1. Analyze the user's request (provided below the agent list) to break it down into sequential, atomic sub-tasks.
+2. For EACH atomic sub-task, analyze its requirements (e.g., needs web search, file access, specific tool, OS interaction).
+3. Look CAREFULLY at the "Available Agents" list provided in the user message. This list contains the ONLY agents you can choose from.
+4. For EACH atomic sub-task, select the SINGLE MOST SUITABLE agent from the "Available Agents" list based on the sub-task's requirements and the agent's capabilities (indicated by its name and device type).
+5. The "atomic_tasks_agent" field in your output MUST EXACTLY MATCH one of the "Name" values from the "Available Agents" list.
+6. The "atomic_tasks_device" field in your output MUST EXACTLY MATCH the "Device" value corresponding to the selected agent's name from the "Available Agents" list.
+7. Required output format: Your entire response MUST conform strictly to the following JSON structure. Do NOT include ANY text before the opening '{' or after the closing '}'. Do NOT use markdown formatting like ```json.
+8. The agent list is as follows:{self.agent_list}\n
+"""
+        self.system_prompt += """
 {
-    "Task": "Original task description",
+    "Task": "Original task description provided by the user",
     "atomic_tasks": [
         {
             "atomic_tasks_ID": <auto-incrementing integer ID starting from 1>,
             "atomic_tasks_description": "Clear sub-task description including required tools/sources and objectives",
-            "atomic_tasks_answer": "",
-            "atomic_tasks_status": "pending"
+            "atomic_tasks_answer": "", // Leave empty
+            "atomic_tasks_status": "pending", // Set to pending
+            "atomic_tasks_agent": "<EXACT Name of the selected agent from the Available Agents list>",
+            "atomic_tasks_device": "<EXACT Operating device of the selected agent from the Available Agents list>"
         }
+        // ... more atomic tasks if needed
     ]
 }
 
-Example: If the input is "Find the capital of France and its current weather.", the output MUST be EXACTLY:
+Example Scenario:
+User message contains:
+Available Agents:
+- Name: mobile_agent_e, Device: android
+- Name: pc_agent_win, Device: windows
+
+Please decompose the following task: Find the author of 'Pride and Prejudice' and save the result to a file named 'author.txt' on the desktop.
+
+Example Output JSON (MUST be EXACTLY this format, using names/devices from the list above):
 {
-    "Task": "Find the capital of France and its current weather.",
+    "Task": "Find the author of 'Pride and Prejudice' and save the result to a file named 'author.txt' on the desktop.",
     "atomic_tasks": [
         {
             "atomic_tasks_ID": 1,
-            "atomic_tasks_description": "Identify the capital of France using a search engine.",
+            "atomic_tasks_description": "Search the web to find the author of the book 'Pride and Prejudice'.",
             "atomic_tasks_answer": "",
-            "atomic_tasks_status": "pending"
+            "atomic_tasks_status": "pending",
+            "atomic_tasks_agent": "pc_agent_win", // Selected from the list as capable of search on PC
+            "atomic_tasks_device": "windows" // Corresponding device from the list
         },
         {
             "atomic_tasks_ID": 2,
-            "atomic_tasks_description": "Get the current weather for the capital identified in step 1 using a weather API or search engine.",
+            "atomic_tasks_description": "Save the author's name found in step 1 to a file named 'author.txt' on the desktop.",
             "atomic_tasks_answer": "",
-            "atomic_tasks_status": "pending"
+            "atomic_tasks_status": "pending",
+            "atomic_tasks_agent": "mobile_agent_e", // Selected from the list as best for file operations
+            "atomic_tasks_device": "android" // Corresponding device from the list
         }
     ]
 }
@@ -316,7 +379,23 @@ Output ONLY the JSON object. No introductory phrases, no explanations, no apolog
                 "atomic_tasks_description",
                 "atomic_tasks_answer",
                 "atomic_tasks_status",
+                "atomic_tasks_agent",
+                "atomic_tasks_device",
             }
+
+            # Create a set of valid agent names for quick lookup during validation
+            valid_agent_names = {
+                agent.get("agent_name")
+                for agent in self.agent_list
+                if agent.get("agent_name")
+            }
+            # Create a mapping from agent name to device for validation
+            agent_device_map = {
+                agent.get("agent_name"): agent.get("operating_device")
+                for agent in self.agent_list
+                if agent.get("agent_name")
+            }
+
             for i, task_item in enumerate(result_data.get("atomic_tasks", [])):
                 if isinstance(task_item, dict):
                     # 确保包含所有预期的键，并设置默认值
@@ -332,6 +411,52 @@ Output ONLY the JSON object. No introductory phrases, no explanations, no apolog
                         task_item["atomic_tasks_answer"] = ""
                     if "atomic_tasks_status" not in task_item:
                         task_item["atomic_tasks_status"] = "pending"
+
+                    selected_agent = task_item.get("atomic_tasks_agent")
+                    selected_device = task_item.get("atomic_tasks_device")
+
+                    if not selected_agent or not isinstance(selected_agent, str):
+                        task_item["atomic_tasks_agent"] = "Not Selected"
+                        print(
+                            f"Warning: Atomic task ID {task_item.get('atomic_tasks_ID')} missing or invalid agent selection. Set to 'Not Selected'."
+                        )
+                        selected_agent = (
+                            "Not Selected"  # Update local var for device check
+                        )
+
+                    if not selected_device or not isinstance(selected_device, str):
+                        task_item["atomic_tasks_device"] = "Unknown"
+                        print(
+                            f"Warning: Atomic task ID {task_item.get('atomic_tasks_ID')} missing or invalid device info. Set to 'Unknown'."
+                        )
+                        selected_device = "Unknown"  # Update local var
+
+                    # **Strict Validation against agent_list**
+                    if self.agent_list:  # Only validate if we have an agent list
+                        if (
+                            selected_agent != "Not Selected"
+                            and selected_agent not in valid_agent_names
+                        ):
+                            print(
+                                f"Validation ERROR: Agent '{selected_agent}' selected for task ID {task_item.get('atomic_tasks_ID')} is NOT in the provided agent list: {list(valid_agent_names)}. Correcting to 'Not Selected'."
+                            )
+                            task_item["atomic_tasks_agent"] = "Not Selected"
+                            task_item["atomic_tasks_device"] = (
+                                "Unknown"  # Reset device too if agent is invalid
+                            )
+                        elif selected_agent != "Not Selected":
+                            # Agent name is valid, now check if the device matches
+                            expected_device = agent_device_map.get(selected_agent)
+                            if selected_device != expected_device:
+                                print(
+                                    f"Validation WARNING: Device '{selected_device}' for agent '{selected_agent}' (task ID {task_item.get('atomic_tasks_ID')}) does NOT match the expected device '{expected_device}' from the agent list. Keeping LLM provided value for now, but this might indicate an issue."
+                                )
+                                # Option: Force correction:
+                                # print(f"Validation WARNING: ... Correcting device to '{expected_device}'.")
+                                # task_item["atomic_tasks_device"] = expected_device
+                    elif selected_agent == "Not Selected":
+                        # If agent list was empty, ensure device is also marked Unknown
+                        task_item["atomic_tasks_device"] = "Unknown"
 
                     # 可以选择只保留预期的键
                     # cleaned_task_item = {k: task_item.get(k) for k in expected_keys if k in task_item}
@@ -418,6 +543,8 @@ Output ONLY the JSON object. No introductory phrases, no explanations, no apolog
             "atomic_tasks_description",
             "atomic_tasks_answer",
             "atomic_tasks_status",
+            "atomic_tasks_agent",
+            "atomic_tasks_device",
         ]
         for i, task in enumerate(output["atomic_tasks"]):
             if not isinstance(task, dict):
@@ -488,7 +615,7 @@ def task_splitter(taskdata: TaskData) -> Optional[str]:
 
     # 初始化任务分解器
     decomposer = TaskDecomposer(
-        config.TS_API_URL, config.TS_API_KEY, config.TS_MODEL, config.GlOBAL_PROXY
+        config.TD_API_URL, config.TD_API_KEY, config.TD_MODEL, config.GlOBAL_PROXY
     )
 
     # 从 taskdata 获取任务和任务ID
@@ -524,9 +651,9 @@ if __name__ == "__main__":
             task_id = task_data.Task_ID
 
             decomposer = TaskDecomposer(
-                config.TS_API_URL,
-                config.TS_API_KEY,
-                config.TS_MODEL,
+                config.TD_API_URL,
+                config.TD_API_KEY,
+                config.TD_MODEL,
                 config.GlOBAL_PROXY,
             )
             # 使用任务和任务 ID 调用 decompose 并获取返回路径
@@ -571,3 +698,5 @@ if __name__ == "__main__":
 
     except Exception as e:
         print(f"运行 task_splitter 示例时发生错误：{e}")
+    # agent_list = load_agent_list()
+    # print(agent_list)
