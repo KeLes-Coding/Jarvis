@@ -110,7 +110,7 @@ CAPTION_MODEL = "qwen-max-2025-01-25"
 
 QWEN_API_URL = "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions"
 # QWEN_API_KEY = os.environ.get("QWEN_API_KEY", default=None)
-QWEN_API_KEY = "sk-3f16802c73d549d391e7f708cece3ab3"
+QWEN_API_KEY = ""
 
 # OPENAI_API_URL = "http://218.192.110.198:11434/v1/chat/completions"
 # OPENAI_API_KEY = "ollama"
